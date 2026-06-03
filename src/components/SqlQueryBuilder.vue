@@ -2,7 +2,7 @@
 import { ref, computed } from 'vue'
 
 // Reactive state updated to support SCORE and CONCAT modes
-const tableName = ref('ge_versio') // Default to 'ge_versio'
+const tableName = ref('table_name') // Default to 'table_name'
 const operation = ref('SELECT') // SELECT, INSERT, UPDATE, DELETE, SCORE, CONCAT
 
 const selectFields = ref(['id', 'nombre', 'email'])
@@ -16,20 +16,20 @@ const whereConditions = ref([
 ])
 
 // SCORE specific state
-const scoreBaseFields = ref('ge_versio.*')
+const scoreBaseFields = ref('table_name.*')
 const scoreThresholdOperator = ref('>=')
 const scoreThresholdValue = ref(0)
 const scoreOrderDirection = ref('DESC')
 const scoreRules = ref([
-  { column: 'ge_versio_descri', operator: 'LIKE', value: '%MODELO%', weight: 4 },
-  { column: 'ge_versio_estado', operator: '=', value: 'A', weight: 2 }
+  { column: 'desc_column', operator: 'LIKE', value: '%value%', weight: 4 },
+  { column: 'status_column', operator: '=', value: 'A', weight: 2 }
 ])
 
 // CONCAT specific state
 const concatAction = ref('UPDATE')
 const concatSheetId = ref('DATOS1')
 const concatSourceTable = ref('table')
-const concatTargetTable = ref('SarixVerticales.table_name')
+const concatTargetTable = ref('table_name')
 const concatTargetColumn = ref('column_name')
 const concatTargetValue = ref("'value'")
 const concatFilteredIds = ref('1, 2')
@@ -187,7 +187,7 @@ const generatedQuery = computed(() => {
     }
 
     case 'SCORE': {
-      const baseFields = scoreBaseFields.value.trim() || 'ge_versio.*'
+      const baseFields = scoreBaseFields.value.trim() || 'table_name.*'
       const activeRules = scoreRules.value.filter(r => r.column.trim() !== '')
       const threshOp = scoreThresholdOperator.value
       const threshVal = scoreThresholdValue.value !== '' ? scoreThresholdValue.value : '0'
@@ -211,7 +211,7 @@ const generatedQuery = computed(() => {
       const action = concatAction.value
       const sheetId = concatSheetId.value.trim() || 'DATOS1'
       const sourceTable = concatSourceTable.value.trim() || 'table'
-      const targetTable = concatTargetTable.value.trim() || 'SarixVerticales.table_name'
+      const targetTable = concatTargetTable.value.trim() || 'table_name'
       const targetColumn = concatTargetColumn.value.trim() || 'column_name'
       const targetValue = concatTargetValue.value.trim() || "'value'"
       const filteredIds = concatFilteredIds.value.trim() || '1, 2'
@@ -732,7 +732,7 @@ const copyQuery = async () => {
               <input
                 v-model="tableName"
                 type="text"
-                placeholder="ge_versio"
+                placeholder="table_name"
                 class="bg-slate-50 dark:bg-slate-800/40 text-slate-800 dark:text-slate-200 border border-amber-200 dark:border-amber-800/60 focus:border-amber-500 rounded-xl px-4 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all duration-200 ease-in-out"
               />
             </div>
@@ -743,7 +743,7 @@ const copyQuery = async () => {
               <input
                 v-model="scoreBaseFields"
                 type="text"
-                placeholder="ge_versio.*"
+                placeholder="table_name.*"
                 class="bg-slate-50 dark:bg-slate-800/40 text-slate-800 dark:text-slate-200 border border-amber-200 dark:border-amber-800/60 focus:border-amber-500 rounded-xl px-4 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/20 transition-all duration-200 ease-in-out"
               />
             </div>
@@ -923,7 +923,7 @@ const copyQuery = async () => {
               <input
                 v-model="concatTargetTable"
                 type="text"
-                placeholder="SarixVerticales.table_name"
+                placeholder="table_name"
                 class="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 rounded-xl px-4 py-2 text-sm font-mono focus:outline-none transition-all duration-200 ease-in-out"
               />
             </div>
