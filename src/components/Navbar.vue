@@ -14,11 +14,11 @@ defineEmits(['toggle-dark-mode'])
     <div class="max-w-7xl mx-auto flex items-center justify-between">
       <!-- Branding / Logo -->
       <div class="flex items-center gap-3 group select-none">
-        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-650 to-emerald-500 flex items-center justify-center shadow-sm shadow-indigo-500/10 group-hover:scale-105 transition-transform duration-300">
-          <svg class="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 3m0-3a2 2 0 110 3m-9 8h10M3 5h10M3 13h10M7 21h10m-3-4a3 3 0 11-6 0m6 0a3 3 0 10-6 0m6 0H3" />
-          </svg>
-        </div>
+        <img
+          src="/favicon.svg"
+          alt="DataUtils Hub Logo"
+          class="w-10 h-10 rounded-xl shadow-sm shadow-indigo-500/10 group-hover:scale-105 transition-transform duration-300"
+        />
         <div>
           <span class="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
             DataUtils Hub
