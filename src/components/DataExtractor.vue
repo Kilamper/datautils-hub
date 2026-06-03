@@ -8,11 +8,76 @@ const outputFormat = ref('list') // list, sql
 const removeDuplicates = ref(true)
 const copied = ref(false)
 
+// Function to validate Spanish IDs (NIF, NIE, CIF)
+function isValidSpanishID(token) {
+  if (typeof token !== 'string') return false
+  const clean = token.toUpperCase().trim()
+  if (clean.length !== 9) return false
+
+  // 1. DNI/NIF: 8 digits + 1 letter
+  if (/^\d{8}[A-Z]$/.test(clean)) {
+    const num = parseInt(clean.substring(0, 8), 10)
+    const letter = clean[8]
+    const validLetters = 'TRWAGMYFPDXBNJZSQVHLCKE'
+    return letter === validLetters[num % 23]
+  }
+
+  // 2. NIE: 1 starting letter (X, Y, Z) + 7 digits + 1 letter
+  if (/^[XYZ]\d{7}[A-Z]$/.test(clean)) {
+    const first = clean[0]
+    const prefix = first === 'X' ? '0' : first === 'Y' ? '1' : '2'
+    const numStr = prefix + clean.substring(1, 8)
+    const num = parseInt(numStr, 10)
+    const letter = clean[8]
+    const validLetters = 'TRWAGMYFPDXBNJZSQVHLCKE'
+    return letter === validLetters[num % 23]
+  }
+
+  // 3. CIF: 1 organization type letter + 7 digits + 1 control digit/letter
+  if (/^[A-Z]\d{7}[A-Z0-9]$/.test(clean)) {
+    const firstChar = clean[0]
+    const digits = clean.substring(1, 8)
+    const lastChar = clean[8]
+
+    let evenSum = 0
+    let oddSum = 0
+
+    for (let i = 0; i < 7; i++) {
+      const d = parseInt(digits[i], 10)
+      if (i % 2 === 1) {
+        evenSum += d
+      } else {
+        let doubled = d * 2
+        if (doubled > 9) {
+          doubled = Math.floor(doubled / 10) + (doubled % 10)
+        }
+        oddSum += doubled
+      }
+    }
+
+    const totalSum = evenSum + oddSum
+    const lastDigitOfSum = totalSum % 10
+    const controlDigitVal = (10 - lastDigitOfSum) % 10
+    const controlDigit = controlDigitVal.toString()
+    const controlLetter = 'JABCDEFGHI'[controlDigitVal]
+
+    if (['P', 'Q', 'R', 'S', 'W'].includes(firstChar)) {
+      return lastChar === controlLetter
+    } else if (['A', 'B', 'E', 'H'].includes(firstChar)) {
+      return lastChar === controlDigit
+    } else {
+      return lastChar === controlDigit || lastChar === controlLetter
+    }
+  }
+
+  return false
+}
+
 // Regex definitions
 const regexMap = {
-  vin: /\b[A-HJ-NPR-Z0-9]{17}\b/gi,
-  matricula: /\b\d{4}\s?[B-DF-HJ-NP-TV-Z]{3}\b/gi,
-  id_spain: /\b(?:\d{8}[A-Z]|[XYZ]\d{7}[A-Z]|[A-HJKLMNPQRSUVW]\d{7}[0-9A-J])\b/gi
+  vin: /[A-HJ-NPR-Z0-9]{17}/gi,
+  matricula: /\d{4}[\s-]?[BCDFGHJKLMNPRSTVXYZ]{3}/gi,
+  id_spain: /(?:\d{8}[\s-]?[A-Z]|[A-Z][\s-]?\d{7}[\s-]?[A-Z0-9])/gi
 }
 
 const regexErrorMessage = ref('')
@@ -38,15 +103,20 @@ const results = computed(() => {
   const matches = rawText.value.match(regex)
   if (!matches) return []
 
-  // Standardize values (e.g. uppercase, trim spaces for license plates)
+  // Standardize values (e.g. uppercase, trim spaces/hyphens)
   let processed = matches.map(match => {
     let val = match.trim().toUpperCase()
-    // For license plates, we might want to normalize by removing spacing
     if (dataType.value === 'matricula') {
-      val = val.replace(/\s+/g, '')
+      val = val.replace(/[\s-]+/g, '')
+    } else if (dataType.value === 'id_spain') {
+      val = val.replace(/[^A-Z0-9]/g, '')
     }
     return val
   })
+
+  if (dataType.value === 'id_spain') {
+    processed = processed.filter(isValidSpanishID)
+  }
 
   if (removeDuplicates.value) {
     processed = [...new Set(processed)]
