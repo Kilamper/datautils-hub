@@ -76,7 +76,7 @@ function isValidSpanishID(token) {
 // Regex definitions
 const regexMap = {
   vin: /[A-HJ-NPR-Z0-9]{17}/gi,
-  matricula: /\d{4}[\s-]?[BCDFGHJKLMNPRSTVXYZ]{3}/gi,
+  matricula: /\d{4}[\s-]?[BCDFGHJKLMNPRSTVWXYZ]{3}/gi,
   id_spain: /(?:\d{8}[\s-]?[A-Z]|[A-Z][\s-]?\d{7}[\s-]?[A-Z0-9])/gi
 }
 
