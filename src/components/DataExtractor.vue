@@ -85,37 +85,98 @@ const regexErrorMessage = ref('')
 const results = computed(() => {
   if (!rawText.value) return []
 
-  let regex
+  let processed = []
   regexErrorMessage.value = ''
 
-  if (dataType.value === 'custom') {
-    if (!customRegex.value) return []
-    try {
-      regex = new RegExp(customRegex.value, 'gi')
-    } catch (e) {
-      regexErrorMessage.value = 'Expresión regular no válida.'
-      return []
+  if (dataType.value === 'vin') {
+    // Custom smart extraction for VINs
+    // 1. Find all blocks of contiguous alphanumeric characters that are valid for a VIN
+    // Note: A VIN character can be A-Z (excluding I, O, Q) or 0-9.
+    const blocks = rawText.value.match(/[A-HJ-NPR-Z0-9]+/gi) || []
+    const extractedVins = []
+
+    for (const block of blocks) {
+      if (block.length < 17) continue
+
+      const candidates = []
+      for (let i = 0; i <= block.length - 17; i++) {
+        const str = block.substring(i, i + 17).toUpperCase()
+        if (/[IOQ]/i.test(str)) continue
+        if (!/[A-Z1-9]/i.test(str[0])) continue
+        if (!/\d{4}$/.test(str)) continue
+
+        const trailingDigitsMatch = str.match(/\d+$/)
+        const score = trailingDigitsMatch ? trailingDigitsMatch[0].length : 0
+
+        candidates.push({
+          str,
+          start: i,
+          end: i + 17,
+          score,
+          isLetterStart: /[A-Z]/i.test(str[0])
+        })
+      }
+
+      // Sort candidates by start index to process left-to-right
+      candidates.sort((a, b) => a.start - b.start)
+
+      const selected = []
+      for (const cand of candidates) {
+        const overlapIdx = selected.findIndex(sel => cand.start < sel.end && cand.end > sel.start)
+        if (overlapIdx !== -1) {
+          const existing = selected[overlapIdx]
+          let replace = false
+          if (cand.score > existing.score) {
+            replace = true
+          } else if (cand.score === existing.score) {
+            if (cand.isLetterStart && !existing.isLetterStart) {
+              replace = true
+            }
+          }
+          if (replace) {
+            selected[overlapIdx] = cand
+          }
+        } else {
+          selected.push(cand)
+        }
+      }
+
+      for (const sel of selected) {
+        extractedVins.push(sel.str)
+      }
     }
+    processed = extractedVins
   } else {
-    regex = regexMap[dataType.value]
-  }
-
-  const matches = rawText.value.match(regex)
-  if (!matches) return []
-
-  // Standardize values (e.g. uppercase, trim spaces/hyphens)
-  let processed = matches.map(match => {
-    let val = match.trim().toUpperCase()
-    if (dataType.value === 'matricula') {
-      val = val.replace(/[\s-]+/g, '')
-    } else if (dataType.value === 'id_spain') {
-      val = val.replace(/[^A-Z0-9]/g, '')
+    let regex
+    if (dataType.value === 'custom') {
+      if (!customRegex.value) return []
+      try {
+        regex = new RegExp(customRegex.value, 'gi')
+      } catch (e) {
+        regexErrorMessage.value = 'Expresión regular no válida.'
+        return []
+      }
+    } else {
+      regex = regexMap[dataType.value]
     }
-    return val
-  })
 
-  if (dataType.value === 'id_spain') {
-    processed = processed.filter(isValidSpanishID)
+    const matches = rawText.value.match(regex)
+    if (!matches) return []
+
+    // Standardize values (e.g. uppercase, trim spaces/hyphens)
+    processed = matches.map(match => {
+      let val = match.trim().toUpperCase()
+      if (dataType.value === 'matricula') {
+        val = val.replace(/[\s-]+/g, '')
+      } else if (dataType.value === 'id_spain') {
+        val = val.replace(/[^A-Z0-9]/g, '')
+      }
+      return val
+    })
+
+    if (dataType.value === 'id_spain') {
+      processed = processed.filter(isValidSpanishID)
+    }
   }
 
   if (removeDuplicates.value) {
