@@ -1,7 +1,8 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import Navbar from './components/Navbar.vue'
 import DataExtractor from './components/DataExtractor.vue'
+import OcrReader from './components/OcrReader.vue'
 import SqlQueryBuilder from './components/SqlQueryBuilder.vue'
 
 const currentTab = ref('extractor')
@@ -10,6 +11,13 @@ const isDarkMode = ref(true) // Default state is Dark Mode
 const toggleDarkMode = () => {
   isDarkMode.value = !isDarkMode.value
 }
+
+// Compute active component for KeepAlive
+const tabComponent = computed(() => {
+  if (currentTab.value === 'extractor') return DataExtractor
+  if (currentTab.value === 'ocr') return OcrReader
+  return SqlQueryBuilder
+})
 
 // Watch theme changes and update HTML class and localStorage
 watch(isDarkMode, (newVal) => {
@@ -63,7 +71,23 @@ onMounted(() => {
             1. Extractor de Datos
           </button>
 
-          <!-- Pestaña 2: Constructor de Queries SQL -->
+          <!-- Pestaña 2: Lector OCR -->
+          <button
+            @click="currentTab = 'ocr'"
+            :class="[
+              'flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-semibold tracking-wide transition-all duration-200 ease-in-out cursor-pointer select-none',
+              currentTab === 'ocr'
+                ? 'bg-white dark:bg-slate-800 text-indigo-650 dark:text-indigo-400 shadow-sm border border-slate-200/50 dark:border-slate-700/50 translate-y-[-1px]'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200/40 dark:hover:bg-slate-800/40'
+            ]"
+          >
+            <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            2. Lector OCR
+          </button>
+
+          <!-- Pestaña 3: Constructor de Queries SQL -->
           <button
             @click="currentTab = 'sql-builder'"
             :class="[
@@ -76,7 +100,7 @@ onMounted(() => {
             <svg class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            2. Constructor de Queries SQL
+            3. Constructor de Queries SQL
           </button>
         </div>
       </div>
@@ -87,7 +111,7 @@ onMounted(() => {
       <div class="max-w-7xl mx-auto py-4">
         <!-- KeepAlive to preserve inputs and settings when switching between tabs -->
         <KeepAlive>
-          <component :is="currentTab === 'extractor' ? DataExtractor : SqlQueryBuilder" />
+          <component :is="tabComponent" />
         </KeepAlive>
       </div>
     </main>

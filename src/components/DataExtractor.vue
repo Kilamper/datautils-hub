@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import Tesseract from 'tesseract.js'
 
 const rawText = ref('')
@@ -9,11 +9,8 @@ const outputFormat = ref('list') // list, sql
 const removeDuplicates = ref(true)
 const copied = ref(false)
 
-const fileInput = ref(null)
-const isDragging = ref(false)
 const ocrProgress = ref(0)
 const isOcrProcessing = ref(false)
-const ocrStatusText = ref('')
 const ocrError = ref('')
 const ocrLanguage = ref('spa+eng')
 
@@ -316,24 +313,6 @@ function showOcrError(msg) {
   }, 5000)
 }
 
-function handleFileSelect(event) {
-  const file = event.target.files?.[0]
-  if (file) {
-    processImageFile(file)
-  }
-}
-
-function handleDrop(event) {
-  const file = event.dataTransfer?.files?.[0]
-  if (file) {
-    processImageFile(file)
-  }
-}
-
-function triggerFileInput() {
-  fileInput.value?.click()
-}
-
 async function processImageFile(file) {
   if (!file) return
   if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
@@ -343,7 +322,6 @@ async function processImageFile(file) {
 
   isOcrProcessing.value = true
   ocrProgress.value = 0
-  ocrStatusText.value = 'Inicializando OCR...'
   ocrError.value = ''
 
   try {
@@ -360,11 +338,6 @@ async function processImageFile(file) {
               if (!isOcrProcessing.value) return
               if (m.status === 'recognizing text') {
                 ocrProgress.value = Math.round(m.progress * 100)
-                ocrStatusText.value = `Reconociendo texto: ${ocrProgress.value}%`
-              } else {
-                ocrStatusText.value = m.status === 'loading tesseract core' ? 'Cargando motor de OCR...' : 
-                                      m.status === 'initializing api' ? 'Inicializando API...' : 
-                                      m.status === 'loading language traineddata' ? 'Cargando datos de idioma...' : m.status
               }
             }
           }
@@ -372,10 +345,13 @@ async function processImageFile(file) {
         
         if (!isOcrProcessing.value) return
         if (result && result.data && typeof result.data.text === 'string') {
-          rawText.value = result.data.text
-          ocrStatusText.value = '¡Extracción completada!'
+          if (rawText.value) {
+            rawText.value += '\n' + result.data.text
+          } else {
+            rawText.value = result.data.text
+          }
         } else {
-          throw new Error('No text returned')
+          throw new Error('No se detectó texto en la imagen')
         }
       } catch (err) {
         console.error('Tesseract error:', err)
@@ -418,14 +394,6 @@ const handlePaste = (event) => {
     }
   }
 }
-
-onMounted(() => {
-  window.addEventListener('paste', handlePaste)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('paste', handlePaste)
-})
 </script>
 <template>
   <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -440,141 +408,61 @@ onUnmounted(() => {
           <span class="text-xs text-slate-400 dark:text-slate-550 font-semibold uppercase tracking-wider">Origen de datos</span>
         </div>
 
-        <!-- Image Upload Dropzone -->
-        <div 
-          @click="triggerFileInput"
-          @dragover.prevent="isDragging = true"
-          @dragenter.prevent="isDragging = true"
-          @dragleave.prevent="isDragging = false"
-          @dragend.prevent="isDragging = false"
-          @drop.prevent="isDragging = false; handleDrop($event)"
-          :class="[
-            'border-dashed border-2 rounded-2xl p-6 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 select-none',
-            isDragging 
-              ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/20' 
-              : 'border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-slate-100/30 dark:hover:bg-slate-850/20'
-          ]"
-        >
-          <input 
-            type="file" 
-            ref="fileInput" 
-            accept="image/png, image/jpeg, image/jpg, image/webp" 
-            class="hidden" 
-            @change="handleFileSelect" 
-          />
+        <!-- Raw Text Textarea -->
+        <div class="relative flex flex-col">
+          <textarea
+            v-model="rawText"
+            @paste="handlePaste"
+            rows="10"
+            placeholder="Introduce o pega el texto que contiene los datos que deseas extraer (o pega una captura de pantalla)..."
+            class="w-full bg-slate-50 dark:bg-slate-800/40 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 rounded-2xl p-4 pb-12 text-sm font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 ease-in-out resize-y"
+          ></textarea>
           
-          <!-- Upload Icon -->
-          <div class="p-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400">
-            <svg class="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-          </div>
-          
-          <div class="flex flex-col gap-1">
-            <p class="text-sm font-bold text-slate-700 dark:text-slate-200">
-              Arrastra una imagen o haz clic para subir
-            </p>
-            <p class="text-xs text-slate-400 dark:text-slate-550">
-              Arrastra una imagen, haz clic para subir o pega una imagen
-            </p>
-          </div>
-        </div>
+          <!-- Clear Button -->
+          <button
+            v-if="rawText"
+            @click="rawText = ''"
+            class="absolute top-4 right-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ease-in-out cursor-pointer active:scale-95 shadow-sm"
+          >
+            Limpiar
+          </button>
 
-        <!-- OCR Language Selector -->
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs border-b border-slate-100 dark:border-slate-800/80 pb-3 -mt-2">
-          <span class="font-bold text-slate-500 dark:text-slate-450 uppercase tracking-wider">Idioma de OCR</span>
-          <div class="flex gap-1.5 flex-wrap">
-            <button 
-              v-for="lang in [{ code: 'spa', name: 'Español' }, { code: 'eng', name: 'Inglés' }, { code: 'spa+eng', name: 'Ambos' }]"
-              :key="lang.code"
-              @click="ocrLanguage = lang.code"
-              type="button"
-              :class="[
-                'px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer text-[11px]',
-                ocrLanguage === lang.code 
-                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/10' 
-                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-              ]"
-            >
-              {{ lang.name }}
-            </button>
-          </div>
-        </div>
-
-        <!-- OCR Loading/Progress State -->
-        <div 
-          v-if="isOcrProcessing" 
-          class="bg-indigo-50/30 dark:bg-indigo-950/10 border border-indigo-150 dark:border-indigo-900/50 rounded-2xl p-4 flex flex-col gap-3.5"
-        >
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3 text-indigo-600 dark:text-indigo-400">
-              <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <!-- Subtle Loading / Error State Overlay inside the Textarea -->
+          <div 
+            v-if="isOcrProcessing || ocrError"
+            class="absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs bg-slate-100/90 dark:bg-slate-900/90 backdrop-blur-sm px-3 py-2 rounded-xl border border-slate-200/50 dark:border-slate-800/50 pointer-events-auto shadow-sm"
+          >
+            <div class="flex items-center gap-2">
+              <svg v-if="isOcrProcessing" class="animate-spin h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span class="text-sm font-bold text-slate-750 dark:text-slate-350">
-                Procesando imagen con OCR... por favor espere
+              <svg v-else class="h-3.5 w-3.5 text-rose-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+
+              <span class="font-medium text-slate-700 dark:text-slate-300">
+                {{ isOcrProcessing ? `Analizando captura de pantalla... (${ocrProgress}%)` : ocrError }}
               </span>
             </div>
-            <span class="text-xs font-mono font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-2.5 py-1 rounded-md">
-              {{ ocrProgress }}%
-            </span>
-          </div>
-          
-          <div class="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
-            <div 
-              class="bg-indigo-600 h-full transition-all duration-300 ease-out" 
-              :style="{ width: `${ocrProgress}%` }"
-            ></div>
-          </div>
-          
-          <div class="flex justify-between items-center text-[11px] text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider">
-            <span>{{ ocrStatusText }}</span>
+
             <button 
-              @click="isOcrProcessing = false" 
+              v-if="isOcrProcessing"
+              @click="isOcrProcessing = false"
               type="button"
               class="text-red-500 hover:text-red-650 cursor-pointer font-bold transition-colors"
             >
               Cancelar
             </button>
+            <button
+              v-else
+              @click="ocrError = ''"
+              type="button"
+              class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 font-bold transition-colors cursor-pointer"
+            >
+              ✕
+            </button>
           </div>
-        </div>
-
-        <!-- OCR Error Alert -->
-        <div 
-          v-if="ocrError" 
-          class="bg-rose-500/10 border border-rose-200 dark:border-rose-900/50 rounded-2xl p-4 flex items-center justify-between text-rose-800 dark:text-rose-300"
-        >
-          <div class="flex items-center gap-3">
-            <svg class="w-5 h-5 text-rose-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span class="text-sm font-semibold">{{ ocrError }}</span>
-          </div>
-          <button 
-            @click="ocrError = ''" 
-            type="button"
-            class="text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 font-extrabold text-sm p-1 cursor-pointer"
-          >
-            ✕
-          </button>
-        </div>
-
-        <!-- Raw Text Textarea -->
-        <div class="relative">
-          <textarea
-            v-model="rawText"
-            rows="10"
-            placeholder="Introduce o pega el texto que contiene los datos que deseas extraer..."
-            class="w-full bg-slate-50 dark:bg-slate-800/40 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 focus:border-indigo-500 rounded-2xl p-4 text-sm font-mono placeholder:text-slate-400 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 ease-in-out resize-y"
-          ></textarea>
-          <button
-            v-if="rawText"
-            @click="rawText = ''"
-            class="absolute top-4 right-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-705 border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all duration-200 ease-in-out cursor-pointer active:scale-95 shadow-sm"
-          >
-            Limpiar
-          </button>
         </div>
 
         <!-- Extraction Settings Grid -->
