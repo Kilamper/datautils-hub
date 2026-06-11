@@ -4,19 +4,27 @@ import Navbar from './components/Navbar.vue'
 import DataExtractor from './components/DataExtractor.vue'
 import OcrReader from './components/OcrReader.vue'
 import SqlQueryBuilder from './components/SqlQueryBuilder.vue'
+import RegexBuilder from './components/RegexBuilder.vue'
 
 const currentTab = ref('extractor')
 const isDarkMode = ref(true) // Default state is Dark Mode
+const injectedRegex = ref('')
 
 const toggleDarkMode = () => {
   isDarkMode.value = !isDarkMode.value
+}
+
+const handleUseRegex = (pattern) => {
+  injectedRegex.value = pattern
+  currentTab.value = 'extractor'
 }
 
 // Compute active component for KeepAlive
 const tabComponent = computed(() => {
   if (currentTab.value === 'extractor') return DataExtractor
   if (currentTab.value === 'ocr') return OcrReader
-  return SqlQueryBuilder
+  if (currentTab.value === 'sql-builder') return SqlQueryBuilder
+  return RegexBuilder
 })
 
 // Watch theme changes and update HTML class and localStorage
@@ -100,7 +108,23 @@ onMounted(() => {
             <svg class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
             </svg>
-            3. Constructor de Queries SQL
+            3. Constructor SQL
+          </button>
+
+          <!-- Pestaña 4: Constructor Visual de Regex -->
+          <button
+            @click="currentTab = 'regex-builder'"
+            :class="[
+              'flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-semibold tracking-wide transition-all duration-200 ease-in-out cursor-pointer select-none',
+              currentTab === 'regex-builder'
+                ? 'bg-white dark:bg-slate-800 text-indigo-650 dark:text-indigo-400 shadow-sm border border-slate-200/50 dark:border-slate-700/50 translate-y-[-1px]'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-200/40 dark:hover:bg-slate-800/40'
+            ]"
+          >
+            <svg class="w-4.5 h-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h2M16 4h2a2 2 0 012 2v12a2 2 0 01-2 2h-2M12 9v6m-3-3h6" />
+            </svg>
+            4. Constructor Regex
           </button>
         </div>
       </div>
@@ -111,7 +135,12 @@ onMounted(() => {
       <div class="max-w-7xl mx-auto py-4">
         <!-- KeepAlive to preserve inputs and settings when switching between tabs -->
         <KeepAlive>
-          <component :is="tabComponent" />
+          <component 
+            :is="tabComponent"
+            :injected-regex="injectedRegex"
+            @clear-injected-regex="injectedRegex = ''"
+            @use-regex="handleUseRegex"
+          />
         </KeepAlive>
       </div>
     </main>

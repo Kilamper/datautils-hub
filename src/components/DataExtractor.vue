@@ -1,6 +1,15 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import Tesseract from 'tesseract.js'
+
+const props = defineProps({
+  injectedRegex: {
+    type: String,
+    default: ''
+  }
+})
+
+const emit = defineEmits(['clear-injected-regex'])
 
 const rawText = ref('')
 const dataType = ref('vin') // vin, matricula, id_spain, custom
@@ -8,6 +17,14 @@ const customRegex = ref('')
 const outputFormat = ref('list') // list, sql
 const removeDuplicates = ref(true)
 const copied = ref(false)
+
+watch(() => props.injectedRegex, (newVal) => {
+  if (newVal) {
+    dataType.value = 'custom'
+    customRegex.value = newVal
+    emit('clear-injected-regex')
+  }
+}, { immediate: true })
 
 const ocrProgress = ref(0)
 const isOcrProcessing = ref(false)
