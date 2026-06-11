@@ -1,5 +1,6 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import Tesseract from 'tesseract.js'
 
 const rawText = ref('')
 const dataType = ref('vin') // vin, matricula, id_spain, custom
@@ -7,6 +8,14 @@ const customRegex = ref('')
 const outputFormat = ref('list') // list, sql
 const removeDuplicates = ref(true)
 const copied = ref(false)
+
+const fileInput = ref(null)
+const isDragging = ref(false)
+const ocrProgress = ref(0)
+const isOcrProcessing = ref(false)
+const ocrStatusText = ref('')
+const ocrError = ref('')
+const ocrLanguage = ref('spa+eng')
 
 // Function to validate Spanish IDs (NIF, NIE, CIF)
 function isValidSpanishID(token) {
@@ -73,11 +82,85 @@ function isValidSpanishID(token) {
   return false
 }
 
+// Function to validate and optionally correct Spanish IDs (NIF, NIE, CIF) with OCR error recovery
+function validateAndCorrectSpanishID(token) {
+  if (typeof token !== 'string') return null
+  let clean = token.toUpperCase().trim()
+  // Remove any separators
+  clean = clean.replace(/[^A-Z0-9]/g, '')
+  if (clean.length !== 9) return null
+
+  // Map of common OCR letter-to-digit substitutions
+  const letterToDigit = {
+    'O': '0', 'I': '1', 'L': '1', 'Z': '2', 'S': '5', 'G': '6', 'T': '7', 'B': '8', 'U': '0', 'V': '0'
+  }
+
+  function getDigit(char) {
+    if (/\d/.test(char)) return char
+    return letterToDigit[char] || char
+  }
+
+  // 1. Try validating as-is first
+  if (isValidSpanishID(clean)) {
+    return clean
+  }
+
+  // 2. Try DNI/NIF correction: 8 digits + 1 letter
+  let dniCandidate = ''
+  for (let i = 0; i < 8; i++) {
+    dniCandidate += getDigit(clean[i])
+  }
+  const dniLastChar = clean[8]
+  if (/^\d{8}$/.test(dniCandidate) && /[A-Z]/.test(dniLastChar)) {
+    const candidate = dniCandidate + dniLastChar
+    if (isValidSpanishID(candidate)) {
+      return candidate
+    }
+  }
+
+  // 3. Try NIE correction: X/Y/Z + 7 digits + 1 letter
+  const nieFirstChar = clean[0]
+  let nieDigitsCandidate = ''
+  for (let i = 1; i < 8; i++) {
+    nieDigitsCandidate += getDigit(clean[i])
+  }
+  const nieLastChar = clean[8]
+  if (/^[XYZ]/.test(nieFirstChar) && /^\d{7}$/.test(nieDigitsCandidate) && /[A-Z]/.test(nieLastChar)) {
+    const candidate = nieFirstChar + nieDigitsCandidate + nieLastChar
+    if (isValidSpanishID(candidate)) {
+      return candidate
+    }
+  }
+
+  // 4. Try CIF correction: 1 organization letter + 7 digits + 1 control digit/letter
+  const cifFirstChar = clean[0]
+  let cifDigitsCandidate = ''
+  for (let i = 1; i < 8; i++) {
+    cifDigitsCandidate += getDigit(clean[i])
+  }
+  const cifLastChar = clean[8]
+  if (/^[A-Z]/.test(cifFirstChar) && /^\d{7}$/.test(cifDigitsCandidate)) {
+    // Try last char as is
+    let candidate = cifFirstChar + cifDigitsCandidate + cifLastChar
+    if (isValidSpanishID(candidate)) {
+      return candidate
+    }
+    // Try last char converted to digit
+    const lastDigit = getDigit(cifLastChar)
+    candidate = cifFirstChar + cifDigitsCandidate + lastDigit
+    if (isValidSpanishID(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
 // Regex definitions
 const regexMap = {
   vin: /[A-HJ-NPR-Z0-9]{17}/gi,
   matricula: /\d{4}[\s-]?[BCDFGHJKLMNPRSTVWXYZ]{3}/gi,
-  id_spain: /(?:\d{8}[\s-]?[A-Z]|[A-Z][\s-]?\d{7}[\s-]?[A-Z0-9])/gi
+  id_spain: /(?:[A-Z0-9][\s\-\.\/|]?){8}[A-Z0-9]/gi
 }
 
 const regexErrorMessage = ref('')
@@ -146,6 +229,25 @@ const results = computed(() => {
       }
     }
     processed = extractedVins
+  } else if (dataType.value === 'id_spain') {
+    // Custom smart extraction for Spanish IDs (DNI, NIE, CIF)
+    // Allows extraction even when merged with other text (e.g. "NIEsválidosX1234567L")
+    const blocks = rawText.value.match(/[A-Z0-9\-\.\/|]+/gi) || []
+    const extractedIds = []
+
+    for (const block of blocks) {
+      const cleanBlock = block.replace(/[^A-Z0-9]/g, '').toUpperCase()
+      if (cleanBlock.length < 9) continue
+
+      for (let i = 0; i <= cleanBlock.length - 9; i++) {
+        const windowStr = cleanBlock.substring(i, i + 9)
+        const corrected = validateAndCorrectSpanishID(windowStr)
+        if (corrected) {
+          extractedIds.push(corrected)
+        }
+      }
+    }
+    processed = extractedIds
   } else {
     let regex
     if (dataType.value === 'custom') {
@@ -168,15 +270,9 @@ const results = computed(() => {
       let val = match.trim().toUpperCase()
       if (dataType.value === 'matricula') {
         val = val.replace(/[\s-]+/g, '')
-      } else if (dataType.value === 'id_spain') {
-        val = val.replace(/[^A-Z0-9]/g, '')
       }
       return val
     })
-
-    if (dataType.value === 'id_spain') {
-      processed = processed.filter(isValidSpanishID)
-    }
   }
 
   if (removeDuplicates.value) {
@@ -210,6 +306,126 @@ const copyToClipboard = async () => {
     console.error('Error al copiar: ', err)
   }
 }
+
+function showOcrError(msg) {
+  ocrError.value = msg
+  setTimeout(() => {
+    if (ocrError.value === msg) {
+      ocrError.value = ''
+    }
+  }, 5000)
+}
+
+function handleFileSelect(event) {
+  const file = event.target.files?.[0]
+  if (file) {
+    processImageFile(file)
+  }
+}
+
+function handleDrop(event) {
+  const file = event.dataTransfer?.files?.[0]
+  if (file) {
+    processImageFile(file)
+  }
+}
+
+function triggerFileInput() {
+  fileInput.value?.click()
+}
+
+async function processImageFile(file) {
+  if (!file) return
+  if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp'].includes(file.type)) {
+    showOcrError('No se pudo procesar la imagen o el formato no es compatible')
+    return
+  }
+
+  isOcrProcessing.value = true
+  ocrProgress.value = 0
+  ocrStatusText.value = 'Inicializando OCR...'
+  ocrError.value = ''
+
+  try {
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      if (!isOcrProcessing.value) return
+      const imageSrc = e.target.result
+      try {
+        const result = await Tesseract.recognize(
+          imageSrc,
+          ocrLanguage.value,
+          {
+            logger: (m) => {
+              if (!isOcrProcessing.value) return
+              if (m.status === 'recognizing text') {
+                ocrProgress.value = Math.round(m.progress * 100)
+                ocrStatusText.value = `Reconociendo texto: ${ocrProgress.value}%`
+              } else {
+                ocrStatusText.value = m.status === 'loading tesseract core' ? 'Cargando motor de OCR...' : 
+                                      m.status === 'initializing api' ? 'Inicializando API...' : 
+                                      m.status === 'loading language traineddata' ? 'Cargando datos de idioma...' : m.status
+              }
+            }
+          }
+        )
+        
+        if (!isOcrProcessing.value) return
+        if (result && result.data && typeof result.data.text === 'string') {
+          rawText.value = result.data.text
+          ocrStatusText.value = '¡Extracción completada!'
+        } else {
+          throw new Error('No text returned')
+        }
+      } catch (err) {
+        console.error('Tesseract error:', err)
+        if (isOcrProcessing.value) {
+          showOcrError('No se pudo procesar la imagen o el formato no es compatible')
+        }
+      } finally {
+        isOcrProcessing.value = false
+      }
+    }
+    
+    reader.onerror = () => {
+      if (isOcrProcessing.value) {
+        showOcrError('Error al leer el archivo de imagen')
+        isOcrProcessing.value = false
+      }
+    }
+    
+    reader.readAsDataURL(file)
+  } catch (err) {
+    console.error(err)
+    if (isOcrProcessing.value) {
+      showOcrError('No se pudo procesar la imagen o el formato no es compatible')
+      isOcrProcessing.value = false
+    }
+  }
+}
+
+const handlePaste = (event) => {
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type.indexOf('image') !== -1) {
+      const file = item.getAsFile()
+      if (file) {
+        processImageFile(file)
+        event.preventDefault()
+        break
+      }
+    }
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('paste', handlePaste)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('paste', handlePaste)
+})
 </script>
 <template>
   <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 max-w-7xl mx-auto px-4 sm:px-6 py-8">
@@ -222,6 +438,126 @@ const copyToClipboard = async () => {
             Entrada de Texto
           </h2>
           <span class="text-xs text-slate-400 dark:text-slate-550 font-semibold uppercase tracking-wider">Origen de datos</span>
+        </div>
+
+        <!-- Image Upload Dropzone -->
+        <div 
+          @click="triggerFileInput"
+          @dragover.prevent="isDragging = true"
+          @dragenter.prevent="isDragging = true"
+          @dragleave.prevent="isDragging = false"
+          @dragend.prevent="isDragging = false"
+          @drop.prevent="isDragging = false; handleDrop($event)"
+          :class="[
+            'border-dashed border-2 rounded-2xl p-6 text-center cursor-pointer transition-all duration-200 flex flex-col items-center justify-center gap-3 select-none',
+            isDragging 
+              ? 'border-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/20' 
+              : 'border-slate-200 dark:border-slate-800 hover:border-slate-400 dark:hover:border-slate-700 bg-slate-50/50 dark:bg-slate-900/40 hover:bg-slate-100/30 dark:hover:bg-slate-850/20'
+          ]"
+        >
+          <input 
+            type="file" 
+            ref="fileInput" 
+            accept="image/png, image/jpeg, image/jpg, image/webp" 
+            class="hidden" 
+            @change="handleFileSelect" 
+          />
+          
+          <!-- Upload Icon -->
+          <div class="p-3 bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800 text-indigo-600 dark:text-indigo-400">
+            <svg class="w-6 h-6 animate-pulse" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+          
+          <div class="flex flex-col gap-1">
+            <p class="text-sm font-bold text-slate-700 dark:text-slate-200">
+              Arrastra una imagen o haz clic para subir
+            </p>
+            <p class="text-xs text-slate-400 dark:text-slate-550">
+              Arrastra una imagen, haz clic para subir o pega una imagen
+            </p>
+          </div>
+        </div>
+
+        <!-- OCR Language Selector -->
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs border-b border-slate-100 dark:border-slate-800/80 pb-3 -mt-2">
+          <span class="font-bold text-slate-500 dark:text-slate-450 uppercase tracking-wider">Idioma de OCR</span>
+          <div class="flex gap-1.5 flex-wrap">
+            <button 
+              v-for="lang in [{ code: 'spa', name: 'Español' }, { code: 'eng', name: 'Inglés' }, { code: 'spa+eng', name: 'Ambos' }]"
+              :key="lang.code"
+              @click="ocrLanguage = lang.code"
+              type="button"
+              :class="[
+                'px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer text-[11px]',
+                ocrLanguage === lang.code 
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/10' 
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+              ]"
+            >
+              {{ lang.name }}
+            </button>
+          </div>
+        </div>
+
+        <!-- OCR Loading/Progress State -->
+        <div 
+          v-if="isOcrProcessing" 
+          class="bg-indigo-50/30 dark:bg-indigo-950/10 border border-indigo-150 dark:border-indigo-900/50 rounded-2xl p-4 flex flex-col gap-3.5"
+        >
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3 text-indigo-600 dark:text-indigo-400">
+              <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span class="text-sm font-bold text-slate-750 dark:text-slate-350">
+                Procesando imagen con OCR... por favor espere
+              </span>
+            </div>
+            <span class="text-xs font-mono font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/30 px-2.5 py-1 rounded-md">
+              {{ ocrProgress }}%
+            </span>
+          </div>
+          
+          <div class="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
+            <div 
+              class="bg-indigo-600 h-full transition-all duration-300 ease-out" 
+              :style="{ width: `${ocrProgress}%` }"
+            ></div>
+          </div>
+          
+          <div class="flex justify-between items-center text-[11px] text-slate-400 dark:text-slate-500 font-semibold uppercase tracking-wider">
+            <span>{{ ocrStatusText }}</span>
+            <button 
+              @click="isOcrProcessing = false" 
+              type="button"
+              class="text-red-500 hover:text-red-650 cursor-pointer font-bold transition-colors"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+
+        <!-- OCR Error Alert -->
+        <div 
+          v-if="ocrError" 
+          class="bg-rose-500/10 border border-rose-200 dark:border-rose-900/50 rounded-2xl p-4 flex items-center justify-between text-rose-800 dark:text-rose-300"
+        >
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-rose-500 flex-shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            <span class="text-sm font-semibold">{{ ocrError }}</span>
+          </div>
+          <button 
+            @click="ocrError = ''" 
+            type="button"
+            class="text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 font-extrabold text-sm p-1 cursor-pointer"
+          >
+            ✕
+          </button>
         </div>
 
         <!-- Raw Text Textarea -->
